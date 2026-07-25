@@ -12,6 +12,7 @@
 
 - **VS Code** (стабильный) и **Claude Code** (расширение/CLI) в нём.
 - **Телефон** с приложением **ntfy** (Android: Google Play / F-Droid; iOS: App Store).
+- **Node.js в PATH** — хуки запускают через него крохотный помощник (обычно node уже стоит).
 - Для хуков на Windows проще всего **Git Bash** (ставится вместе с Git). Если его нет, расширение само подставит вариант на PowerShell. На macOS/Linux ничего доставлять не нужно.
 
 ---
@@ -58,6 +59,8 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
 <details>
 <summary>Вручную (если хочется контролировать самому)</summary>
 
+Хуки запускают крохотный помощник `~/.claude/claude-notify-hook.js` (его пишет само расширение). Помощник читает данные, которые Claude Code передаёт хуку, и кладёт в триггер имя проекта и идентификатор запроса (для точной защиты от дублей). **Нужен `node` в PATH** — обычно он и так есть.
+
 **macOS / Linux / Windows с Git Bash:**
 
 ```json
@@ -70,7 +73,7 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
             "type": "command",
             "shell": "bash",
             "async": true,
-            "command": "echo \"$CLAUDE_PROJECT_DIR\" >> \"$HOME/.claude/.ntfy-trigger\" || true"
+            "command": "node \"$HOME/.claude/claude-notify-hook.js\" done || true"
           }
         ]
       }
@@ -82,7 +85,7 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
             "type": "command",
             "shell": "bash",
             "async": true,
-            "command": "echo \"$CLAUDE_PROJECT_DIR\" >> \"$HOME/.claude/.ntfy-trigger-waiting\" || true"
+            "command": "node \"$HOME/.claude/claude-notify-hook.js\" waiting || true"
           }
         ]
       }
@@ -103,7 +106,7 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
             "type": "command",
             "shell": "powershell",
             "async": true,
-            "command": "Add-Content -Path \"$env:USERPROFILE\\.claude\\.ntfy-trigger\" -Value $env:CLAUDE_PROJECT_DIR"
+            "command": "node \"$env:USERPROFILE\\.claude\\claude-notify-hook.js\" done"
           }
         ]
       }
@@ -115,7 +118,7 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
             "type": "command",
             "shell": "powershell",
             "async": true,
-            "command": "Add-Content -Path \"$env:USERPROFILE\\.claude\\.ntfy-trigger-waiting\" -Value $env:CLAUDE_PROJECT_DIR"
+            "command": "node \"$env:USERPROFILE\\.claude\\claude-notify-hook.js\" waiting"
           }
         ]
       }
@@ -124,7 +127,7 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
 }
 ```
 
-Хук дописывает в файл-триггер только путь проекта (`$CLAUDE_PROJECT_DIR`) — по нему расширение подставляет имя проекта в уведомление. Хук `Notification` нужен только для пушей «Claude ждёт разрешения»; без него всё остальное работает.
+Хук `Notification` нужен только для пушей «Claude ждёт разрешения»; без него всё остальное работает. Совсем простой вариант без node тоже поддерживается — `echo "$CLAUDE_PROJECT_DIR" >> "$HOME/.claude/.ntfy-trigger"` — но тогда защита от дублей грубее (без точного идентификатора запроса).
 
 </details>
 
@@ -146,7 +149,7 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
 | `claudeNotify.message` | `Запрос в Claude Code завершён` | Текст уведомления о завершении. Поддерживает `{project}`. |
 | `claudeNotify.notifyOnWaiting` | `true` | Слать отдельный пуш, когда Claude ждёт ответа/разрешения (нужен хук `Notification`). |
 | `claudeNotify.waitingMessage` | `Claude ждёт вашего разрешения` | Текст такого уведомления. Поддерживает `{project}`. |
-| `claudeNotify.dedupeSeconds` | `5` | Защита от дублей: в это окно (сек.) одинаковый пуш уходит один раз, даже если хук сработал несколько раз или открыто несколько окон. `0` - выключить. |
+| `claudeNotify.dedupeSeconds` | `60` | Сколько секунд помнить отправленное событие, чтобы его повтор не продублировался. Дедуп точный (по идентификатору запроса), разные завершения не склеиваются. `0` - выключить. |
 | `claudeNotify.server` | `https://ntfy.sh` | Сервер ntfy (можно свой self-hosted). |
 | `claudeNotify.token` | *(пусто)* | Bearer-токен для защищённых топиков на своём сервере. Для ntfy.sh не нужен. |
 | `claudeNotify.priority` | `default` | Приоритет пуша: `min`, `low`, `default`, `high`, `max`. |
@@ -168,15 +171,15 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
 
 ## Как это устроено
 
-- **Хуки Claude Code** дописывают путь проекта в файлы-триггеры: `Stop` → `~/.claude/.ntfy-trigger` (запрос завершён), `Notification` → `~/.claude/.ntfy-trigger-waiting` (Claude ждёт ответа). Только Claude Code знает эти моменты, поэтому хуки обязательны.
-- **Расширение** следит за `~/.claude` (плюс резервный опрос на случай пропущенного события) и при появлении триггера читает из него проект и шлёт пуш на ntfy (Node `https`, JSON-публикация - корректный UTF-8 в заголовке и тексте). При нескольких открытых окнах VS Code триггер «захватывается» атомарно, так что пуш уходит ровно один раз.
+- **Хуки Claude Code** запускают помощник `~/.claude/claude-notify-hook.js`, который дописывает в триггер одну JSON-строку: имя проекта + идентификатор запроса (`prompt_id`). `Stop` → `~/.claude/.ntfy-trigger` (запрос завершён), `Notification` → `~/.claude/.ntfy-trigger-waiting` (Claude ждёт ответа). Только Claude Code знает эти моменты, поэтому хуки обязательны.
+- **Расширение** следит за `~/.claude` (плюс резервный опрос) и при появлении триггера читает из него проект и шлёт пуш на ntfy (Node `https`, JSON-публикация - корректный UTF-8). Дубли гасятся **точно**: по идентификатору запроса (а без него — по `session_id` + размеру транскрипта), общим для всех окон атомарным маркером. Поэтому одно и то же завершение не задваивается даже при нескольких окнах, а разные завершения не склеиваются.
 - Кнопка в статус-баре переключает настройку `claudeNotify.enabled`.
 
 ## Приватность и ограничения
 
 - Пуш уходит, только когда открыт VS Code с расширением (для работы в Claude Code это всегда так).
 - Топик ntfy **публичный**: кто знает имя - может читать и слать в него. Держите имя случайным. Для приватности поднимите свой ntfy-сервер, укажите его в `claudeNotify.server` и задайте `claudeNotify.token`.
-- В триггер попадает только путь проекта — ни кода, ни текста переписки с Claude.
+- В триггер попадают только путь проекта и служебные идентификаторы Claude Code (session_id, prompt_id, путь к транскрипту) — ни кода, ни текста переписки с Claude.
 - Расширение работает на Windows/macOS/Linux.
 
 ## Сборка из исходников

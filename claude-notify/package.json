@@ -2,7 +2,7 @@
   "name": "claude-notify",
   "displayName": "Claude Notify",
   "description": "Phone push (ntfy) when a Claude Code request finishes or waits for you, with a status bar toggle",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "publisher": "local",
   "license": "MIT",
   "repository": {
@@ -91,9 +91,9 @@
         },
         "claudeNotify.dedupeSeconds": {
           "type": "number",
-          "default": 5,
+          "default": 60,
           "minimum": 0,
-          "description": "Защита от дублей: в течение стольких секунд одинаковое уведомление отправляется только один раз, даже если хук сработал несколько раз или открыто несколько окон VS Code. 0 - отключить защиту."
+          "description": "Сколько секунд помнить уже отправленное событие, чтобы его повторное срабатывание не продублировалось (например, при нескольких окнах VS Code). Дедупликация точная - по идентификатору запроса Claude Code, поэтому разные завершения НЕ склеиваются, даже если попали в одно окно времени. 0 - отключить защиту от дублей."
         },
         "claudeNotify.server": {
           "type": "string",
