@@ -1,6 +1,6 @@
 # Claude Notify
 
-Уведомление на телефон, когда **запрос в Claude Code завершился** — и когда **Claude ждёт вашего разрешения**. В статус-баре VS Code — кнопка-переключатель, пуш приходит через бесплатный сервис [ntfy.sh](https://ntfy.sh) в приложение на Android/iOS.
+Уведомление на телефон, когда **запрос в Claude Code завершился** — и когда **Claude ждёт вас**: показывает диалог выбора или просит разрешение. В статус-баре VS Code — кнопка-переключатель, пуш приходит через бесплатный сервис [ntfy.sh](https://ntfy.sh) в приложение на Android/iOS.
 
 В уведомлении видно, **какой проект** доработал — удобно, когда открыто несколько окон.
 
@@ -89,6 +89,19 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "async": true,
+            "command": "node \"$HOME/.claude/claude-notify-hook.js\" waiting || true"
+          }
+        ]
+      }
     ]
   }
 }
@@ -122,12 +135,25 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "async": true,
+            "command": "node \"$env:USERPROFILE\\.claude\\claude-notify-hook.js\" waiting"
+          }
+        ]
+      }
     ]
   }
 }
 ```
 
-Хук `Notification` нужен только для пушей «Claude ждёт разрешения»; без него всё остальное работает. Совсем простой вариант без node тоже поддерживается — `echo "$CLAUDE_PROJECT_DIR" >> "$HOME/.claude/.ntfy-trigger"` — но тогда защита от дублей грубее (без точного идентификатора запроса).
+Хуки «ожидания» необязательны: `Notification` даёт пуш при запросе разрешения, `PreToolUse` (matcher `AskUserQuestion`) — при диалоге выбора; без них работает всё остальное. Совсем простой вариант без node тоже поддерживается — `echo "$CLAUDE_PROJECT_DIR" >> "$HOME/.claude/.ntfy-trigger"` — но тогда защита от дублей грубее (без точного идентификатора запроса).
 
 </details>
 
@@ -147,8 +173,8 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
 | `claudeNotify.topic` | *(пусто)* | Ваш личный топик ntfy. Обязательно задать. |
 | `claudeNotify.title` | `Claude Code · {project}` | Заголовок уведомления. `{project}` - имя папки проекта. |
 | `claudeNotify.message` | `Запрос в Claude Code завершён` | Текст уведомления о завершении. Поддерживает `{project}`. |
-| `claudeNotify.notifyOnWaiting` | `true` | Слать отдельный пуш, когда Claude ждёт ответа/разрешения (нужен хук `Notification`). |
-| `claudeNotify.waitingMessage` | `Claude ждёт вашего разрешения` | Текст такого уведомления. Поддерживает `{project}`. |
+| `claudeNotify.notifyOnWaiting` | `true` | Слать пуш, когда Claude ждёт вас: диалог выбора (`AskUserQuestion`) или запрос разрешения (нужны хуки `PreToolUse`/`Notification`). |
+| `claudeNotify.waitingMessage` | `Claude ждёт вашего ответа` | Запасной текст. Для диалога выбора вместо него подставляется сам вопрос. Поддерживает `{project}`. |
 | `claudeNotify.dedupeSeconds` | `60` | Сколько секунд помнить отправленное событие, чтобы его повтор не продублировался. Дедуп точный (по идентификатору запроса), разные завершения не склеиваются. `0` - выключить. |
 | `claudeNotify.server` | `https://ntfy.sh` | Сервер ntfy (можно свой self-hosted). |
 | `claudeNotify.token` | *(пусто)* | Bearer-токен для защищённых топиков на своём сервере. Для ntfy.sh не нужен. |
@@ -171,7 +197,7 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
 
 ## Как это устроено
 
-- **Хуки Claude Code** запускают помощник `~/.claude/claude-notify-hook.js`, который дописывает в триггер одну JSON-строку: имя проекта + идентификатор запроса (`prompt_id`). `Stop` → `~/.claude/.ntfy-trigger` (запрос завершён), `Notification` → `~/.claude/.ntfy-trigger-waiting` (Claude ждёт ответа). Только Claude Code знает эти моменты, поэтому хуки обязательны.
+- **Хуки Claude Code** запускают помощник `~/.claude/claude-notify-hook.js`, который дописывает в триггер одну JSON-строку: имя проекта + идентификатор запроса (`prompt_id`), а для диалога выбора ещё и текст вопроса. `Stop` → `~/.claude/.ntfy-trigger` (запрос завершён); `Notification` (запрос разрешения) и `PreToolUse` с matcher `AskUserQuestion` (диалог выбора) → `~/.claude/.ntfy-trigger-waiting`. Только Claude Code знает эти моменты, поэтому хуки обязательны.
 - **Расширение** следит за `~/.claude` (плюс резервный опрос) и при появлении триггера читает из него проект и шлёт пуш на ntfy (Node `https`, JSON-публикация - корректный UTF-8). Дубли гасятся **точно**: по идентификатору запроса (а без него — по `session_id` + размеру транскрипта), общим для всех окон атомарным маркером. Поэтому одно и то же завершение не задваивается даже при нескольких окнах, а разные завершения не склеиваются.
 - Кнопка в статус-баре переключает настройку `claudeNotify.enabled`.
 

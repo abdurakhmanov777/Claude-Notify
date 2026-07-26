@@ -56,8 +56,16 @@ const HOOK_SCRIPT = [
   "    id: j.prompt_id || '',",
   "    session: j.session_id || '',",
   "    transcript: j.transcript_path || '',",
-  "    ntype: j.notification_type || ''",
+  "    ntype: j.notification_type || '',",
+  "    tool: j.tool_name || '',",
+  "    note: ''",
   '  };',
+  '  try {',
+  "    if (j.tool_name === 'AskUserQuestion' && j.tool_input &&",
+  '        Array.isArray(j.tool_input.questions) && j.tool_input.questions[0]) {',
+  "      rec.note = String(j.tool_input.questions[0].question || '').slice(0, 300);",
+  '    }',
+  '  } catch (e) { /* ignore */ }',
   "  try { fs.appendFileSync(file, JSON.stringify(rec) + '\\n'); } catch (e) { /* ignore */ }",
   '});',
   'process.stdin.resume();',
@@ -135,10 +143,11 @@ function parseTrigger(content) {
             session: j.session || '',
             transcript: j.transcript || '',
             ntype: j.ntype || '',
+            note: j.note || '',
           };
         } catch (e) { /* fall through to plain-text handling */ }
       }
-      return { project: line, id: '', session: '', transcript: '', ntype: '' };
+      return { project: line, id: '', session: '', transcript: '', ntype: '', note: '' };
     });
 }
 
@@ -213,7 +222,7 @@ function sweepMarkers() {
 // Returns a Promise that resolves on a 2xx response and rejects otherwise
 // (bad config, network error, timeout, or non-2xx status). Callers that only
 // fire-and-forget can ignore the rejection with .catch(() => {}).
-function sendNotification(kind, project) {
+function sendNotification(kind, project, note) {
   return new Promise(function (resolve, reject) {
     const c = cfg();
     const topic = String(c.get('topic', '') || '').trim();
@@ -235,10 +244,15 @@ function sendNotification(kind, project) {
       return;
     }
 
-    const rawMessage =
-      kind === WAITING
-        ? c.get('waitingMessage', 'Claude ждёт вашего разрешения')
-        : c.get('message', 'Запрос в Claude Code завершён');
+    let rawMessage;
+    if (kind === WAITING) {
+      rawMessage =
+        note && note.trim()
+          ? note.trim()
+          : c.get('waitingMessage', 'Claude ждёт вашего ответа');
+    } else {
+      rawMessage = c.get('message', 'Запрос в Claude Code завершён');
+    }
 
     const data = {
       topic: topic,
@@ -379,7 +393,7 @@ function handleTrigger(kind) {
     if (!claimEventMarker(key)) {
       return; // another window already sent this event
     }
-    sendNotification(kind, projectName(rec.project)).catch(function () {
+    sendNotification(kind, projectName(rec.project), rec.note).catch(function () {
       /* offline / bad config - stay silent */
     });
   });
@@ -497,7 +511,7 @@ function isOurHook(command) {
 
 // Drop our previous hooks for this event (keeping anyone else's, even inside a
 // shared group) and append a fresh one.
-function applyHook(hooks, event, shell, command) {
+function applyHook(hooks, event, shell, command, matcher) {
   const list = Array.isArray(hooks[event]) ? hooks[event] : [];
   const cleaned = [];
   list.forEach(function (group) {
@@ -512,9 +526,13 @@ function applyHook(hooks, event, shell, command) {
       cleaned.push(Object.assign({}, group, { hooks: kept }));
     }
   });
-  cleaned.push({
+  const group = {
     hooks: [{ type: 'command', shell: shell, async: true, command: command }],
-  });
+  };
+  if (matcher) {
+    group.matcher = matcher;
+  }
+  cleaned.push(group);
   hooks[event] = cleaned;
 }
 
@@ -556,6 +574,7 @@ function setupHooks() {
   const cmds = hookCommands();
   applyHook(data.hooks, 'Stop', cmds.shell, cmds.done);
   applyHook(data.hooks, 'Notification', cmds.shell, cmds.waiting);
+  applyHook(data.hooks, 'PreToolUse', cmds.shell, cmds.waiting, 'AskUserQuestion');
 
   try {
     fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + '\n', 'utf8');
