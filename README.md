@@ -13,7 +13,7 @@
 
 ## ⚡ Коротко
 
-1. Поставить `.vsix` из [Releases](https://github.com/abdurakhmanov777/claude-notify/releases) (или собрать: `cd claude-notify && npm install && npm run package`).
+1. Поставить `.vsix` из [Releases](https://github.com/abdurakhmanov777/Claude-Notify/releases) (или собрать: `cd claude-notify && npm install && npm run package`).
 2. Задать свой топик ntfy в настройках VS Code (`Ctrl+,` → «Claude Notify») и подписаться на него в приложении ntfy на телефоне.
 3. Добавить `Stop`-хук в `~/.claude/settings.json` (см. [README расширения](claude-notify/README.md#4-добавить-триггер-в-claude-code)).
 

@@ -22,7 +22,7 @@
 ### 1. Поставить расширение
 
 **Способ А (VSIX, рекомендую):**
-- Скачать готовый `claude-notify-<версия>.vsix` со страницы [Releases](https://github.com/abdurakhmanov777/claude-notify/releases).
+- Скачать готовый `claude-notify-<версия>.vsix` со страницы [Releases](https://github.com/abdurakhmanov777/Claude-Notify/releases).
 - В VS Code: `Ctrl+Shift+P` → **Extensions: Install from VSIX...** → выбрать скачанный файл.
 - Или из терминала: `code --install-extension claude-notify-<версия>.vsix`
 
