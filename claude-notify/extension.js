@@ -254,7 +254,7 @@ function sweepMarkers() {
 // Returns a Promise that resolves on a 2xx response and rejects otherwise
 // (bad config, network error, timeout, or non-2xx status). Callers that only
 // fire-and-forget can ignore the rejection with .catch(() => {}).
-function sendNotification(kind, project, interrupted) {
+function sendNotification(kind, project, interrupted, overrideMessage) {
   return new Promise(function (resolve, reject) {
     const c = cfg();
     const topic = String(c.get('topic', '') || '').trim();
@@ -277,7 +277,9 @@ function sendNotification(kind, project, interrupted) {
     }
 
     let rawMessage;
-    if (kind === WAITING) {
+    if (overrideMessage) {
+      rawMessage = overrideMessage;
+    } else if (kind === WAITING) {
       rawMessage = c.get('waitingMessage', 'Ожидание ответа');
     } else if (interrupted) {
       rawMessage = c.get('interruptedMessage', 'Запрос прерван');
@@ -672,7 +674,7 @@ function activate(context) {
       const folders = vscode.workspace.workspaceFolders;
       const project = folders && folders.length > 0 ? folders[0].name : '';
       try {
-        await sendNotification(DONE, project);
+        await sendNotification(DONE, project, false, 'Тестовое уведомление');
         vscode.window.setStatusBarMessage(
           'Claude Notify: тестовое уведомление отправлено ✓',
           4000

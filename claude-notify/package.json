@@ -2,7 +2,7 @@
   "name": "claude-notify",
   "displayName": "Claude Notify",
   "description": "Phone push (ntfy) when a Claude Code request finishes or waits for you, with a status bar toggle",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "publisher": "local",
   "license": "MIT",
   "repository": {
