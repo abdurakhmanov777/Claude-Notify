@@ -2,7 +2,7 @@
   "name": "claude-notify",
   "displayName": "Claude Notify",
   "description": "Phone push (ntfy) when a Claude Code request finishes or waits for you, with a status bar toggle",
-  "version": "2.3.4",
+  "version": "2.4.0",
   "publisher": "local",
   "license": "MIT",
   "repository": {
@@ -78,6 +78,11 @@
           "type": "string",
           "default": "Запрос завершён",
           "description": "Текст уведомления о завершении запроса. Поддерживает подстановку {project}."
+        },
+        "claudeNotify.interruptedMessage": {
+          "type": "string",
+          "default": "Запрос прерван",
+          "description": "Текст, если запрос не завершился нормально: прерван или упёрся в лимит токенов (stop_reason ≠ end_turn). Поддерживает подстановку {project}."
         },
         "claudeNotify.notifyOnWaiting": {
           "type": "boolean",

@@ -56,7 +56,8 @@ const HOOK_SCRIPT = [
   "    id: j.prompt_id || '',",
   "    session: j.session_id || '',",
   "    transcript: j.transcript_path || '',",
-  "    ntype: j.notification_type || ''",
+  "    ntype: j.notification_type || '',",
+  "    reason: j.stop_reason || ''",
   '  };',
   "  try { fs.appendFileSync(file, JSON.stringify(rec) + '\\n'); } catch (e) { /* ignore */ }",
   '});',
@@ -84,16 +85,55 @@ function retentionMs() {
   return isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0;
 }
 
+// True if ~/.claude/settings.json has our Stop hook wired up.
+function hooksConfigured() {
+  try {
+    const d = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    const stop = d && d.hooks && d.hooks.Stop;
+    return (
+      Array.isArray(stop) &&
+      stop.some(function (g) {
+        return (
+          g &&
+          Array.isArray(g.hooks) &&
+          g.hooks.some(function (h) { return h && isOurHook(h.command); })
+        );
+      })
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
+// Reflect health in the status bar: a warning when enabled but misconfigured,
+// so "looks on but nothing arrives" becomes visible instead of silent.
 function render(item) {
-  if (isEnabled()) {
-    item.text = '$(bell) Claude';
-    item.tooltip = 'Уведомления на телефон включены. Нажмите, чтобы выключить.';
-    item.color = undefined;
-  } else {
+  const c = cfg();
+  if (!c.get('enabled', true)) {
     item.text = '$(bell-slash) Claude';
     item.tooltip = 'Уведомления на телефон выключены. Нажмите, чтобы включить.';
     item.color = new vscode.ThemeColor('disabledForeground');
+    return;
   }
+  if (!String(c.get('topic', '') || '').trim()) {
+    item.text = '$(warning) Claude';
+    item.tooltip =
+      'Claude Notify: топик не задан — уведомления не отправляются. ' +
+      'Задайте claudeNotify.topic в настройках (Ctrl+,).';
+    item.color = new vscode.ThemeColor('statusBarItem.warningForeground');
+    return;
+  }
+  if (!hooksConfigured()) {
+    item.text = '$(warning) Claude';
+    item.tooltip =
+      'Claude Notify: хуки Claude Code не настроены — уведомления не придут. ' +
+      'Выполните команду «Claude Notify: настроить хуки Claude Code».';
+    item.color = new vscode.ThemeColor('statusBarItem.warningForeground');
+    return;
+  }
+  item.text = '$(bell) Claude';
+  item.tooltip = 'Уведомления на телефон включены. Нажмите, чтобы выключить.';
+  item.color = undefined;
 }
 
 // Replace {project} in a title/message. When the project is unknown the
@@ -135,10 +175,11 @@ function parseTrigger(content) {
             session: j.session || '',
             transcript: j.transcript || '',
             ntype: j.ntype || '',
+            reason: j.reason || '',
           };
         } catch (e) { /* fall through to plain-text handling */ }
       }
-      return { project: line, id: '', session: '', transcript: '', ntype: '' };
+      return { project: line, id: '', session: '', transcript: '', ntype: '', reason: '' };
     });
 }
 
@@ -213,7 +254,7 @@ function sweepMarkers() {
 // Returns a Promise that resolves on a 2xx response and rejects otherwise
 // (bad config, network error, timeout, or non-2xx status). Callers that only
 // fire-and-forget can ignore the rejection with .catch(() => {}).
-function sendNotification(kind, project) {
+function sendNotification(kind, project, interrupted) {
   return new Promise(function (resolve, reject) {
     const c = cfg();
     const topic = String(c.get('topic', '') || '').trim();
@@ -235,10 +276,14 @@ function sendNotification(kind, project) {
       return;
     }
 
-    const rawMessage =
-      kind === WAITING
-        ? c.get('waitingMessage', 'Ожидание ответа')
-        : c.get('message', 'Запрос завершён');
+    let rawMessage;
+    if (kind === WAITING) {
+      rawMessage = c.get('waitingMessage', 'Ожидание ответа');
+    } else if (interrupted) {
+      rawMessage = c.get('interruptedMessage', 'Запрос прерван');
+    } else {
+      rawMessage = c.get('message', 'Запрос завершён');
+    }
 
     const data = {
       topic: topic,
@@ -382,7 +427,9 @@ function handleTrigger(kind) {
     if (!claimEventMarker(key)) {
       return; // another window already sent this event
     }
-    sendNotification(kind, projectName(rec.project)).catch(function () {
+    const interrupted =
+      kind === DONE && rec.reason && rec.reason !== 'end_turn';
+    sendNotification(kind, projectName(rec.project), interrupted).catch(function () {
       /* offline / bad config - stay silent */
     });
   });
@@ -641,6 +688,7 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('claudeNotify.setupHook', function () {
       setupHooks();
+      render(item);
     })
   );
 
