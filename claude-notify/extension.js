@@ -106,7 +106,7 @@ function render(item) {
 
 // Replace {project} in a title/message. When the project is unknown the
 // placeholder collapses and any separator it left behind is tidied away, so
-// "Claude Code · {project}" degrades to "Claude Code".
+// a template like "{project} · завершено" degrades to "завершено".
 function applyPlaceholders(text, project) {
   const raw = String(text || '');
   const hadPlaceholder = /\{project\}/.test(raw);
@@ -251,14 +251,17 @@ function sendNotification(kind, project, note) {
           ? note.trim()
           : c.get('waitingMessage', 'Claude ждёт вашего ответа');
     } else {
-      rawMessage = c.get('message', 'Запрос в Claude Code завершён');
+      rawMessage = c.get('message', 'Запрос завершён');
     }
 
     const data = {
       topic: topic,
-      title: applyPlaceholders(c.get('title', 'Claude Code · {project}'), project),
+      title: applyPlaceholders(c.get('title', '{project}'), project),
       message: applyPlaceholders(rawMessage, project),
     };
+    if (!data.title) {
+      delete data.title; // empty title -> let ntfy fall back to the topic
+    }
 
     const priorityName = String(c.get('priority', 'default') || 'default');
     if (PRIORITY_MAP[priorityName] && priorityName !== 'default') {
