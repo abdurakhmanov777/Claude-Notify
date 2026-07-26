@@ -2,7 +2,7 @@
   "name": "claude-notify",
   "displayName": "Claude Notify",
   "description": "Phone push (ntfy) when a Claude Code request finishes or waits for you, with a status bar toggle",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "publisher": "local",
   "license": "MIT",
   "repository": {
@@ -71,7 +71,7 @@
         },
         "claudeNotify.title": {
           "type": "string",
-          "default": "{project}",
+          "default": "Claude Code · {project}",
           "description": "Заголовок уведомления. Подстановка {project} - имя папки проекта. Если проект неизвестен, подстановка и лишний разделитель убираются."
         },
         "claudeNotify.message": {

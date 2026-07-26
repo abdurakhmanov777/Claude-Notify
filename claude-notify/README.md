@@ -171,7 +171,7 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
 |---|---|---|
 | `claudeNotify.enabled` | `true` | Слать пуши или нет (то же, что кнопка в статус-баре). |
 | `claudeNotify.topic` | *(пусто)* | Ваш личный топик ntfy. Обязательно задать. |
-| `claudeNotify.title` | `{project}` | Заголовок уведомления. `{project}` - имя папки проекта. |
+| `claudeNotify.title` | `Claude Code · {project}` | Заголовок уведомления. `{project}` - имя папки проекта. |
 | `claudeNotify.message` | `Запрос завершён` | Текст уведомления о завершении. Поддерживает `{project}`. |
 | `claudeNotify.notifyOnWaiting` | `true` | Слать пуш, когда Claude ждёт вас: диалог выбора (`AskUserQuestion`) или запрос разрешения (нужны хуки `PreToolUse`/`Notification`). |
 | `claudeNotify.waitingMessage` | `Claude ждёт вашего ответа` | Запасной текст. Для диалога выбора вместо него подставляется сам вопрос. Поддерживает `{project}`. |
@@ -184,7 +184,7 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
 
 ### Подстановка `{project}`
 
-`{project}` в заголовке и тексте заменяется на имя папки проекта. Если проект неизвестен (например, хук ещё старой версии), подстановка убирается вместе с повисшим разделителем: `{project} · завершено` → `завершено`.
+`{project}` в заголовке и тексте заменяется на имя папки проекта. Если проект неизвестен (например, хук ещё старой версии), подстановка убирается вместе с повисшим разделителем: `Claude Code · {project}` → `Claude Code`.
 
 ### Команды
 
