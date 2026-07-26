@@ -56,16 +56,8 @@ const HOOK_SCRIPT = [
   "    id: j.prompt_id || '',",
   "    session: j.session_id || '',",
   "    transcript: j.transcript_path || '',",
-  "    ntype: j.notification_type || '',",
-  "    tool: j.tool_name || '',",
-  "    note: ''",
+  "    ntype: j.notification_type || ''",
   '  };',
-  '  try {',
-  "    if (j.tool_name === 'AskUserQuestion' && j.tool_input &&",
-  '        Array.isArray(j.tool_input.questions) && j.tool_input.questions[0]) {',
-  "      rec.note = String(j.tool_input.questions[0].question || '').slice(0, 300);",
-  '    }',
-  '  } catch (e) { /* ignore */ }',
   "  try { fs.appendFileSync(file, JSON.stringify(rec) + '\\n'); } catch (e) { /* ignore */ }",
   '});',
   'process.stdin.resume();',
@@ -143,11 +135,10 @@ function parseTrigger(content) {
             session: j.session || '',
             transcript: j.transcript || '',
             ntype: j.ntype || '',
-            note: j.note || '',
           };
         } catch (e) { /* fall through to plain-text handling */ }
       }
-      return { project: line, id: '', session: '', transcript: '', ntype: '', note: '' };
+      return { project: line, id: '', session: '', transcript: '', ntype: '' };
     });
 }
 
@@ -222,7 +213,7 @@ function sweepMarkers() {
 // Returns a Promise that resolves on a 2xx response and rejects otherwise
 // (bad config, network error, timeout, or non-2xx status). Callers that only
 // fire-and-forget can ignore the rejection with .catch(() => {}).
-function sendNotification(kind, project, note) {
+function sendNotification(kind, project) {
   return new Promise(function (resolve, reject) {
     const c = cfg();
     const topic = String(c.get('topic', '') || '').trim();
@@ -244,15 +235,10 @@ function sendNotification(kind, project, note) {
       return;
     }
 
-    let rawMessage;
-    if (kind === WAITING) {
-      rawMessage =
-        note && note.trim()
-          ? note.trim()
-          : c.get('waitingMessage', 'Claude ждёт вашего ответа');
-    } else {
-      rawMessage = c.get('message', 'Запрос завершён');
-    }
+    const rawMessage =
+      kind === WAITING
+        ? c.get('waitingMessage', 'Claude ждёт вашего ответа')
+        : c.get('message', 'Запрос завершён');
 
     const data = {
       topic: topic,
@@ -396,7 +382,7 @@ function handleTrigger(kind) {
     if (!claimEventMarker(key)) {
       return; // another window already sent this event
     }
-    sendNotification(kind, projectName(rec.project), rec.note).catch(function () {
+    sendNotification(kind, projectName(rec.project)).catch(function () {
       /* offline / bad config - stay silent */
     });
   });
