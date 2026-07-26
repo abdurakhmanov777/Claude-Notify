@@ -174,7 +174,7 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
 | `claudeNotify.title` | `Claude Code · {project}` | Заголовок уведомления. `{project}` - имя папки проекта. |
 | `claudeNotify.message` | `Запрос завершён` | Текст уведомления о завершении. Поддерживает `{project}`. |
 | `claudeNotify.notifyOnWaiting` | `true` | Слать пуш, когда Claude ждёт вас: диалог выбора (`AskUserQuestion`) или запрос разрешения (нужны хуки `PreToolUse`/`Notification`). |
-| `claudeNotify.waitingMessage` | `Claude ждёт вашего ответа` | Единый текст, когда Claude ждёт вас (диалог выбора или запрос разрешения). Поддерживает `{project}`. |
+| `claudeNotify.waitingMessage` | `Ожидание ответа` | Единый текст, когда Claude ждёт вас (диалог выбора или запрос разрешения). Поддерживает `{project}`. |
 | `claudeNotify.dedupeSeconds` | `60` | Сколько секунд помнить отправленное событие, чтобы его повтор не продублировался. Дедуп точный (по идентификатору запроса), разные завершения не склеиваются. `0` - выключить. |
 | `claudeNotify.server` | `https://ntfy.sh` | Сервер ntfy (можно свой self-hosted). |
 | `claudeNotify.token` | *(пусто)* | Bearer-токен для защищённых топиков на своём сервере. Для ntfy.sh не нужен. |

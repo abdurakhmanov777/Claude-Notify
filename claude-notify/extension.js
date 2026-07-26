@@ -237,7 +237,7 @@ function sendNotification(kind, project) {
 
     const rawMessage =
       kind === WAITING
-        ? c.get('waitingMessage', 'Claude ждёт вашего ответа')
+        ? c.get('waitingMessage', 'Ожидание ответа')
         : c.get('message', 'Запрос завершён');
 
     const data = {

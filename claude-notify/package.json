@@ -2,7 +2,7 @@
   "name": "claude-notify",
   "displayName": "Claude Notify",
   "description": "Phone push (ntfy) when a Claude Code request finishes or waits for you, with a status bar toggle",
-  "version": "2.3.3",
+  "version": "2.3.4",
   "publisher": "local",
   "license": "MIT",
   "repository": {
@@ -86,7 +86,7 @@
         },
         "claudeNotify.waitingMessage": {
           "type": "string",
-          "default": "Claude ждёт вашего ответа",
+          "default": "Ожидание ответа",
           "description": "Единый текст уведомления, когда Claude ждёт вас: диалог выбора или запрос разрешения. Поддерживает подстановку {project}."
         },
         "claudeNotify.dedupeSeconds": {
