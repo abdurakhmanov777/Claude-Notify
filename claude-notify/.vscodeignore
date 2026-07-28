@@ -1,6 +1,7 @@
 # Sources and tooling not needed inside the packaged .vsix
 .github/**
 node_modules/**
+!node_modules/qrcode-generator/**
 .gitignore
 .vscodeignore
 eslint.config.js

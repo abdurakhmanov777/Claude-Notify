@@ -2,7 +2,7 @@
   "name": "claude-notify",
   "displayName": "Claude Notify",
   "description": "Phone push (ntfy) when a Claude Code request finishes or waits for you, with a status bar toggle",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "publisher": "local",
   "license": "MIT",
   "repository": {
@@ -54,6 +54,10 @@
       {
         "command": "claudeNotify.setupHook",
         "title": "Claude Notify: настроить хуки Claude Code"
+      },
+      {
+        "command": "claudeNotify.showQr",
+        "title": "Claude Notify: показать QR для подписки"
       }
     ],
     "configuration": {
@@ -134,5 +138,8 @@
         }
       }
     }
+  },
+  "dependencies": {
+    "qrcode-generator": "^2.0.4"
   }
 }

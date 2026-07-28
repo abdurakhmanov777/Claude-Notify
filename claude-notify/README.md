@@ -48,6 +48,8 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
 
 Открыть приложение **ntfy** → **+** (Subscribe to topic) → ввести **ровно тот же** топик, что и в настройках → Subscribe.
 
+Чтобы не вводить длинный топик вручную: `Ctrl+Shift+P` → **Claude Notify: показать QR для подписки** и отсканировать QR камерой телефона.
+
 ### 4. Настроить хуки Claude Code
 
 Расширение узнаёт о событиях через хуки Claude Code. Проще всего — **одной командой**:
@@ -193,6 +195,7 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
 - **Claude Notify: переключить уведомления на телефон**
 - **Claude Notify: отправить тестовое уведомление**
 - **Claude Notify: настроить хуки Claude Code**
+- **Claude Notify: показать QR для подписки** — QR с вашим топиком, чтобы не вводить его на телефоне вручную
 
 ---
 

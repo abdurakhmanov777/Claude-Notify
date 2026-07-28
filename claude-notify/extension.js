@@ -630,6 +630,75 @@ function setupHooks() {
   );
 }
 
+// --- Subscribe QR -----------------------------------------------------------
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, function (ch) {
+    return {
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[ch];
+  });
+}
+
+// Build a self-contained webview page with a QR of the ntfy subscription URL,
+// so the topic can be scanned instead of typed on the phone. QR is generated
+// locally (no external service) and embedded as a data: URI.
+function qrSubscribeHtml(topic, server) {
+  const base = server.replace(/\/+$/, '');
+  let host = base.replace(/^https?:\/\//i, '');
+  let secure = !/^http:\/\//i.test(base);
+  try {
+    const u = new URL(base);
+    host = u.host;
+    secure = u.protocol !== 'http:';
+  } catch (e) { /* keep the stripped host */ }
+  // ntfy:// deep link opens the app directly and subscribes; plain https links
+  // are unreliable for launching the app on Android and open a browser instead.
+  let url = 'ntfy://' + host + '/' + encodeURIComponent(topic);
+  if (!secure) {
+    url += '?secure=false';
+  }
+  const qrcode = require('qrcode-generator');
+  const qr = qrcode(0, 'M');
+  qr.addData(url);
+  qr.make();
+  const count = qr.getModuleCount();
+  const cell = 8;
+  const margin = 4;
+  const size = (count + margin * 2) * cell;
+  let rects = '';
+  for (let r = 0; r < count; r++) {
+    for (let col = 0; col < count; col++) {
+      if (qr.isDark(r, col)) {
+        rects +=
+          '<rect x="' + (col + margin) * cell + '" y="' + (r + margin) * cell +
+          '" width="' + cell + '" height="' + cell + '"/>';
+      }
+    }
+  }
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size +
+    '" viewBox="0 0 ' + size + ' ' + size + '">' +
+    '<rect width="100%" height="100%" fill="#ffffff"/>' +
+    '<g fill="#000000">' + rects + '</g></svg>';
+  const img = 'data:image/svg+xml;base64,' + Buffer.from(svg, 'utf8').toString('base64');
+  return (
+    '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\';">' +
+    '<style>body{font-family:sans-serif;text-align:center;padding:24px;' +
+    'background:var(--vscode-editor-background);color:var(--vscode-editor-foreground);}' +
+    '.card{display:inline-block;padding:12px;background:#fff;border-radius:8px;}' +
+    '.muted{opacity:.7;}code{font-size:1.05em;}</style></head><body>' +
+    '<h2>Подписка на уведомления</h2>' +
+    '<div class="card"><img width="' + size + '" height="' + size + '" alt="QR" src="' + img + '"></div>' +
+    '<p>Топик: <code>' + escapeHtml(topic) + '</code></p>' +
+    '<p class="muted">Сервер: ' + escapeHtml(base) + '</p>' +
+    '<p class="muted" style="max-width:400px;margin:16px auto 0;">Отсканируйте камерой телефона — ' +
+    'откроется приложение ntfy и подпишет на топик. Если приложения нет, введите топик вручную (＋ → Subscribe to topic).</p>' +
+    '</body></html>'
+  );
+}
+
 // --- Activation -------------------------------------------------------------
 
 function activate(context) {
@@ -691,6 +760,33 @@ function activate(context) {
     vscode.commands.registerCommand('claudeNotify.setupHook', function () {
       setupHooks();
       render(item);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('claudeNotify.showQr', function () {
+      const topic = String(cfg().get('topic', '') || '').trim();
+      if (!topic) {
+        vscode.window.showWarningMessage(
+          'Claude Notify: сначала задайте топик (claudeNotify.topic), затем показывайте QR.'
+        );
+        return;
+      }
+      const server = String(cfg().get('server', 'https://ntfy.sh') || 'https://ntfy.sh').trim();
+      let html;
+      try {
+        html = qrSubscribeHtml(topic, server);
+      } catch (e) {
+        vscode.window.showErrorMessage('Claude Notify: не удалось сгенерировать QR-код.');
+        return;
+      }
+      const panel = vscode.window.createWebviewPanel(
+        'claudeNotifyQr',
+        'Claude Notify — подписка',
+        vscode.ViewColumn.Active,
+        { enableScripts: false }
+      );
+      panel.webview.html = html;
     })
   );
 
