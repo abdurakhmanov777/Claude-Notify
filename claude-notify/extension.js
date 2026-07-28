@@ -253,6 +253,9 @@ function sweepMarkers() {
 // clearly still at the keyboard.
 let lastActivity = Date.now();
 
+// Previous enabled state, to detect on/off transitions and push a status card.
+let lastEnabled = null;
+
 function markActivity() {
   lastActivity = Date.now();
 }
@@ -389,125 +392,57 @@ function createControlSubscription(onChange) {
   };
 }
 
-// Publish via ntfy's JSON endpoint (POST to the server root with a JSON body).
-// JSON body is UTF-8, so title and message keep Cyrillic intact - no
-// HTTP-header encoding issues, no curl.
-//
-// Returns a Promise that resolves on a 2xx response and rejects otherwise
-// (bad config, network error, timeout, or non-2xx status). Callers that only
-// fire-and-forget can ignore the rejection with .catch(() => {}).
-function sendNotification(kind, project, interrupted, overrideMessage) {
+// Base ntfy server URL with a trailing slash.
+function serverUrl() {
+  let s = String(cfg().get('server', 'https://ntfy.sh') || 'https://ntfy.sh').trim();
+  if (!/\/$/.test(s)) {
+    s += '/';
+  }
+  return s;
+}
+
+// POST a ready ntfy JSON body to the server root. Resolves on 2xx, rejects
+// otherwise (bad server, network error, timeout, non-2xx). JSON is UTF-8, so
+// Cyrillic in title/message stays intact - no header encoding issues, no curl.
+function publish(data) {
   return new Promise(function (resolve, reject) {
-    const c = cfg();
-    const topic = String(c.get('topic', '') || '').trim();
-    if (!topic) {
-      reject(new Error('no-topic'));
-      return;
-    }
-
-    let server = String(c.get('server', 'https://ntfy.sh') || 'https://ntfy.sh').trim();
-    if (!/\/$/.test(server)) {
-      server += '/';
-    }
-
     let url;
     try {
-      url = new URL(server);
+      url = new URL(serverUrl());
     } catch (e) {
       reject(new Error('bad-server'));
       return;
     }
-
-    let rawMessage;
-    if (overrideMessage) {
-      rawMessage = overrideMessage;
-    } else if (kind === WAITING) {
-      rawMessage = c.get('waitingMessage', 'Ожидание ответа');
-    } else if (interrupted) {
-      rawMessage = c.get('interruptedMessage', 'Запрос прерван');
-    } else {
-      rawMessage = c.get('message', 'Запрос завершён');
-    }
-
-    const data = {
-      topic: topic,
-      title: applyPlaceholders(c.get('title', 'Claude Code · {project}'), project),
-      message: applyPlaceholders(rawMessage, project),
-    };
-    if (!data.title) {
-      delete data.title; // empty title -> let ntfy fall back to the topic
-    }
-
-    const priorityName = String(c.get('priority', 'default') || 'default');
-    if (PRIORITY_MAP[priorityName] && priorityName !== 'default') {
-      data.priority = PRIORITY_MAP[priorityName];
-    }
-
-    const tags = String(c.get('tags', '') || '')
-      .split(',')
-      .map(function (t) { return t.trim(); })
-      .filter(function (t) { return t.length > 0; });
-    if (tags.length > 0) {
-      data.tags = tags;
-    }
-
-    const click = String(c.get('click', '') || '').trim();
-    if (click) {
-      data.click = click;
-    }
-
-    // Phone action buttons: tapping one posts a command to the control topic,
-    // which the extension listens to (see createControlSubscription).
-    if (c.get('actionButtons', true)) {
-      const ctrl = controlTopic();
-      if (ctrl) {
-        const ctrlUrl = server + encodeURIComponent(ctrl);
-        const t = String(c.get('token', '') || '').trim();
-        const mkAction = function (label, cmd) {
-          const a = {
-            action: 'http', label: label, url: ctrlUrl,
-            method: 'POST', body: cmd, clear: true,
-          };
-          if (t) {
-            a.headers = { Authorization: 'Bearer ' + t };
-          }
-          return a;
-        };
-        data.actions = [mkAction('Выключить уведомления', 'toggle')];
-      }
-    }
-
     const body = Buffer.from(JSON.stringify(data), 'utf8');
     const headers = {
       'Content-Type': 'application/json; charset=utf-8',
       'Content-Length': body.length,
     };
-
-    const token = String(c.get('token', '') || '').trim();
+    const token = String(cfg().get('token', '') || '').trim();
     if (token) {
       headers['Authorization'] = 'Bearer ' + token;
     }
-
     const mod = url.protocol === 'http:' ? http : https;
-    const options = {
-      method: 'POST',
-      hostname: url.hostname,
-      port: url.port || (url.protocol === 'http:' ? 80 : 443),
-      path: url.pathname || '/',
-      headers: headers,
-    };
-
-    const req = mod.request(options, function (res) {
-      const ok = res.statusCode >= 200 && res.statusCode < 300;
-      res.resume();
-      res.on('end', function () {
-        if (ok) {
-          resolve({ status: res.statusCode });
-        } else {
-          reject(new Error('http-' + res.statusCode));
-        }
-      });
-    });
+    const req = mod.request(
+      {
+        method: 'POST',
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'http:' ? 80 : 443),
+        path: url.pathname || '/',
+        headers: headers,
+      },
+      function (res) {
+        const ok = res.statusCode >= 200 && res.statusCode < 300;
+        res.resume();
+        res.on('end', function () {
+          if (ok) {
+            resolve({ status: res.statusCode });
+          } else {
+            reject(new Error('http-' + res.statusCode));
+          }
+        });
+      }
+    );
     req.on('error', function (err) { reject(err); });
     req.setTimeout(REQUEST_TIMEOUT_MS, function () {
       req.destroy(new Error('timeout'));
@@ -515,6 +450,105 @@ function sendNotification(kind, project, interrupted, overrideMessage) {
     req.write(body);
     req.end();
   });
+}
+
+// One action button that posts a control command to the control topic, or null
+// when buttons are disabled or there is no topic.
+function controlAction(label, cmd) {
+  const ctrl = controlTopic();
+  if (!cfg().get('actionButtons', true) || !ctrl) {
+    return null;
+  }
+  const a = {
+    action: 'http', label: label, url: serverUrl() + encodeURIComponent(ctrl),
+    method: 'POST', body: cmd, clear: true,
+  };
+  const t = String(cfg().get('token', '') || '').trim();
+  if (t) {
+    a.headers = { Authorization: 'Bearer ' + t };
+  }
+  return a;
+}
+
+// Publish a Claude notification. Returns a Promise; fire-and-forget callers can
+// ignore the rejection with .catch(() => {}).
+function sendNotification(kind, project, interrupted, overrideMessage) {
+  const c = cfg();
+  const topic = String(c.get('topic', '') || '').trim();
+  if (!topic) {
+    return Promise.reject(new Error('no-topic'));
+  }
+
+  let rawMessage;
+  if (overrideMessage) {
+    rawMessage = overrideMessage;
+  } else if (kind === WAITING) {
+    rawMessage = c.get('waitingMessage', 'Ожидание ответа');
+  } else if (interrupted) {
+    rawMessage = c.get('interruptedMessage', 'Запрос прерван');
+  } else {
+    rawMessage = c.get('message', 'Запрос завершён');
+  }
+
+  const data = {
+    topic: topic,
+    title: applyPlaceholders(c.get('title', 'Claude Code · {project}'), project),
+    message: applyPlaceholders(rawMessage, project),
+  };
+  if (!data.title) {
+    delete data.title; // empty title -> let ntfy fall back to the topic
+  }
+
+  const priorityName = String(c.get('priority', 'default') || 'default');
+  if (PRIORITY_MAP[priorityName] && priorityName !== 'default') {
+    data.priority = PRIORITY_MAP[priorityName];
+  }
+
+  const tags = String(c.get('tags', '') || '')
+    .split(',')
+    .map(function (t) { return t.trim(); })
+    .filter(function (t) { return t.length > 0; });
+  if (tags.length > 0) {
+    data.tags = tags;
+  }
+
+  const click = String(c.get('click', '') || '').trim();
+  if (click) {
+    data.click = click;
+  }
+
+  const btn = controlAction('Выключить уведомления', 'toggle');
+  if (btn) {
+    data.actions = [btn];
+  }
+
+  return publish(data);
+}
+
+// A quiet status push sent when notifications are toggled, carrying a button to
+// flip back - so on/off can be controlled entirely from the phone.
+function sendStatusPush(enabled) {
+  const topic = String(cfg().get('topic', '') || '').trim();
+  if (!topic) {
+    return;
+  }
+  const key = 'status-' + (enabled ? 'on' : 'off') + '-' + Math.floor(Date.now() / 3000);
+  if (!claimEventMarker(key)) {
+    return; // another window already sent this
+  }
+  const data = {
+    topic: topic,
+    title: 'Claude Notify',
+    message: enabled ? '🔔 Уведомления включены' : '🔕 Уведомления выключены',
+    priority: 2,
+  };
+  const btn = enabled
+    ? controlAction('Выключить', 'disable')
+    : controlAction('Включить', 'enable');
+  if (btn) {
+    data.actions = [btn];
+  }
+  publish(data).catch(function () { /* stay silent */ });
 }
 
 // Turn an error from sendNotification() into a short Russian explanation for
@@ -879,6 +913,7 @@ function activate(context) {
   render(item);
   item.show();
   context.subscriptions.push(item);
+  lastEnabled = cfg().get('enabled', true);
 
   // Drop any stale triggers left over from a session when no window was open.
   Object.keys(TRIGGERS).forEach(function (kind) {
@@ -970,6 +1005,20 @@ function activate(context) {
     })
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('claudeNotify.toggleButtons', async function () {
+      const c = cfg();
+      const on = c.get('actionButtons', true);
+      await c.update('actionButtons', !on, vscode.ConfigurationTarget.Global);
+      vscode.window.setStatusBarMessage(
+        on
+          ? 'Claude Notify: кнопка в уведомлении скрыта'
+          : 'Claude Notify: кнопка в уведомлении показывается',
+        4000
+      );
+    })
+  );
+
   // Track in-editor activity so completion pushes can be skipped while you work.
   context.subscriptions.push(
     vscode.window.onDidChangeTextEditorSelection(markActivity),
@@ -987,6 +1036,11 @@ function activate(context) {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(function (e) {
       if (e.affectsConfiguration('claudeNotify')) {
+        const nowEnabled = cfg().get('enabled', true);
+        if (lastEnabled !== null && nowEnabled !== lastEnabled) {
+          sendStatusPush(nowEnabled);
+        }
+        lastEnabled = nowEnabled;
         render(item);
         control.restart();
       }

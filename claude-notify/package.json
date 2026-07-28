@@ -62,6 +62,10 @@
       {
         "command": "claudeNotify.toggleIdle",
         "title": "Claude Notify: молчание по активности (вкл/выкл)"
+      },
+      {
+        "command": "claudeNotify.toggleButtons",
+        "title": "Claude Notify: кнопка в уведомлении (показать/скрыть)"
       }
     ],
     "configuration": {
