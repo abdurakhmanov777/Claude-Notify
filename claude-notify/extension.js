@@ -258,9 +258,10 @@ function markActivity() {
 }
 
 // Completion pushes are skipped when VS Code saw activity within the last
-// idleSeconds (0 disables). Waiting/interrupted pushes ignore this.
+// idleSeconds (0 disables, which is the default). Waiting/interrupted pushes
+// ignore this.
 function activeRecently() {
-  const s = Number(cfg().get('idleSeconds', 45));
+  const s = Number(cfg().get('idleSeconds', 0));
   return isFinite(s) && s > 0 && Date.now() - lastActivity < s * 1000;
 }
 
@@ -959,12 +960,39 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('claudeNotify.toggleIdle', async function () {
       const c = cfg();
-      const on = Number(c.get('idleSeconds', 45)) > 0;
-      await c.update('idleSeconds', on ? 0 : 45, vscode.ConfigurationTarget.Global);
+      const on = Number(c.get('idleSeconds', 0)) > 0;
+      if (on) {
+        await c.update('idleSeconds', 0, vscode.ConfigurationTarget.Global);
+        vscode.window.setStatusBarMessage(
+          'Claude Notify: молчание при активности выключено',
+          4000
+        );
+        return;
+      }
+      // Turning it on: ask how many seconds of inactivity to require each time.
+      const answer = await vscode.window.showInputBox({
+        title: 'Молчание при активности',
+        prompt:
+          'Через сколько секунд бездействия в VS Code слать пуш о завершении? ' +
+          '(если вы что-то делали за экраном в последние N секунд — пуш не придёт)',
+        placeHolder: 'например, 45',
+        value: '45',
+        ignoreFocusOut: true,
+        validateInput: function (s) {
+          const n = Number(String(s).trim());
+          if (!String(s).trim() || !isFinite(n) || n <= 0) {
+            return 'Введите число секунд больше 0';
+          }
+          return null;
+        },
+      });
+      if (answer === undefined) {
+        return; // cancelled - leave the feature off
+      }
+      const seconds = Number(String(answer).trim());
+      await c.update('idleSeconds', seconds, vscode.ConfigurationTarget.Global);
       vscode.window.setStatusBarMessage(
-        on
-          ? 'Claude Notify: молчание по активности выключено'
-          : 'Claude Notify: молчание по активности включено (45 сек)',
+        'Claude Notify: молчание при активности включено (' + seconds + ' сек)',
         4000
       );
     })

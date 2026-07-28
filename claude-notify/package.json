@@ -2,7 +2,7 @@
   "name": "claude-notify",
   "displayName": "Claude Notify",
   "description": "Phone push (ntfy) when a Claude Code request finishes or waits for you, with a status bar toggle",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "publisher": "local",
   "license": "MIT",
   "repository": {
@@ -61,7 +61,7 @@
       },
       {
         "command": "claudeNotify.toggleIdle",
-        "title": "Claude Notify: молчание по активности (вкл/выкл)"
+        "title": "Claude Notify: молчание при активности (вкл/выкл)"
       }
     ],
     "configuration": {
@@ -142,9 +142,9 @@
         },
         "claudeNotify.idleSeconds": {
           "type": "number",
-          "default": 45,
+          "default": 0,
           "minimum": 0,
-          "description": "Не слать пуш о завершении, если вы что-то делали в VS Code (печатали, кликали, скроллили) в последние столько секунд — вы и так за экраном. 0 - слать всегда. На «ожидание» и «обрыв» не влияет."
+          "description": "Молчание при активности. Не слать пуш о завершении, если вы что-то делали в VS Code (печатали, кликали, скроллили) в последние столько секунд — вы и так за экраном. 0 - выключено, слать всегда (значение по умолчанию). На «ожидание» и «обрыв» не влияет. Включать удобнее командой «Claude Notify: молчание при активности (вкл/выкл)» — она каждый раз спрашивает количество секунд."
         },
         "claudeNotify.actionButtons": {
           "type": "boolean",
