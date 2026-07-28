@@ -265,6 +265,13 @@ function activeRecently() {
   return isFinite(s) && s > 0 && Date.now() - lastActivity < s * 1000;
 }
 
+// Short RU label for an idleSeconds value: whole minutes as "N мин", otherwise
+// seconds as "N сек". Used in the status-bar confirmation.
+function idleLabel(seconds) {
+  const s = Number(seconds) || 0;
+  return s > 0 && s % 60 === 0 ? s / 60 + ' мин' : s + ' сек';
+}
+
 // The topic the phone action button posts commands to. Defaults to
 // "<topic>-ctrl"; the phone does not need to subscribe to it.
 function controlTopic() {
@@ -969,35 +976,50 @@ function activate(context) {
         );
         return;
       }
-      // Turning it on: ask how many minutes of inactivity to require each time.
-      // Stored as seconds in idleSeconds; the prompt is in minutes for comfort.
-      const answer = await vscode.window.showInputBox({
+      // Turning it on: offer quick presets or a custom value. Stored as seconds
+      // in idleSeconds; the custom prompt is in minutes for comfort.
+      const CUSTOM = 'Свой вариант…';
+      const PRESETS = [
+        { label: '30 секунд', seconds: 30 },
+        { label: '1 минута', seconds: 60 },
+        { label: '5 минут', seconds: 300 },
+        { label: CUSTOM, seconds: null },
+      ];
+      const picked = await vscode.window.showQuickPick(PRESETS, {
         title: 'Молчание при активности',
-        prompt:
-          'Уведомления не приходят в течение определенного количества минут ' +
-          'с момента последнего действия в VS Code. Задайте количество минут.',
-        placeHolder: 'например, 1',
-        value: '1',
+        placeHolder:
+          'Сколько времени с момента последнего действия в VS Code не присылать уведомления',
         ignoreFocusOut: true,
-        validateInput: function (s) {
-          const n = Number(String(s).trim().replace(',', '.'));
-          if (!String(s).trim() || !isFinite(n) || n <= 0) {
-            return 'Введите число минут больше 0';
-          }
-          return null;
-        },
       });
-      if (answer === undefined) {
+      if (!picked) {
         return; // cancelled - leave the feature off
       }
-      const minutes = Number(String(answer).trim().replace(',', '.'));
-      await c.update(
-        'idleSeconds',
-        Math.round(minutes * 60),
-        vscode.ConfigurationTarget.Global
-      );
+      let seconds = picked.seconds;
+      if (seconds === null) {
+        const answer = await vscode.window.showInputBox({
+          title: 'Молчание при активности',
+          prompt:
+            'Уведомления не приходят в течение определенного количества минут ' +
+            'с момента последнего действия в VS Code. Задайте количество минут.',
+          placeHolder: 'например, 1',
+          value: '1',
+          ignoreFocusOut: true,
+          validateInput: function (s) {
+            const n = Number(String(s).trim().replace(',', '.'));
+            if (!String(s).trim() || !isFinite(n) || n <= 0) {
+              return 'Введите число минут больше 0';
+            }
+            return null;
+          },
+        });
+        if (answer === undefined) {
+          return; // cancelled - leave the feature off
+        }
+        seconds = Math.round(Number(String(answer).trim().replace(',', '.')) * 60);
+      }
+      await c.update('idleSeconds', seconds, vscode.ConfigurationTarget.Global);
       vscode.window.setStatusBarMessage(
-        'Claude Notify: молчание при активности включено (' + minutes + ' мин)',
+        'Claude Notify: молчание при активности включено (' + idleLabel(seconds) + ')',
         4000
       );
     })
