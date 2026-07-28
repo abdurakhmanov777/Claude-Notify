@@ -978,7 +978,7 @@ function activate(context) {
       }
       // Turning it on: offer quick presets or a custom value. Stored as seconds
       // in idleSeconds; the custom prompt is in minutes for comfort.
-      const CUSTOM = 'Свой вариант…';
+      const CUSTOM = 'Ввести свой вариант';
       const PRESETS = [
         { label: '30 секунд', seconds: 30 },
         { label: '1 минута', seconds: 60 },
