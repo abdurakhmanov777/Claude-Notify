@@ -131,17 +131,6 @@ function render(item) {
     item.color = new vscode.ThemeColor('statusBarItem.warningForeground');
     return;
   }
-  if (isSnoozed()) {
-    const d = new Date(snoozedUntil());
-    const hh = ('0' + d.getHours()).slice(-2);
-    const mm = ('0' + d.getMinutes()).slice(-2);
-    item.text = '$(bell-slash) Claude';
-    item.tooltip =
-      'Claude Notify: приглушено до ' + hh + ':' + mm +
-      '. Команда «Claude Notify: снять приглушение» вернёт уведомления.';
-    item.color = new vscode.ThemeColor('disabledForeground');
-    return;
-  }
   item.text = '$(bell) Claude';
   item.tooltip = 'Уведомления на телефон включены. Нажмите, чтобы выключить.';
   item.color = undefined;
@@ -258,9 +247,7 @@ function sweepMarkers() {
   });
 }
 
-// --- Activity, snooze & phone remote control --------------------------------
-
-const snoozePath = path.join(claudeDir, '.ntfy-snooze');
+// --- Activity & phone remote control ----------------------------------------
 
 // Most recent in-editor activity, used to skip completion pushes while you are
 // clearly still at the keyboard.
@@ -277,40 +264,8 @@ function activeRecently() {
   return isFinite(s) && s > 0 && Date.now() - lastActivity < s * 1000;
 }
 
-function snoozedUntil() {
-  try {
-    const v = Number(String(fs.readFileSync(snoozePath, 'utf8')).trim());
-    return isFinite(v) ? v : 0;
-  } catch (e) {
-    return 0;
-  }
-}
-
-function isSnoozed() {
-  return Date.now() < snoozedUntil();
-}
-
-function snoozeMinutes(minutes) {
-  try {
-    fs.writeFileSync(snoozePath, String(Date.now() + minutes * 60000), 'utf8');
-  } catch (e) { /* ignore */ }
-}
-
-function snoozeUntilEndOfDay() {
-  const d = new Date();
-  d.setHours(23, 59, 59, 999);
-  try {
-    fs.writeFileSync(snoozePath, String(d.getTime()), 'utf8');
-  } catch (e) { /* ignore */ }
-}
-
-function clearSnooze() {
-  try {
-    fs.unlinkSync(snoozePath);
-  } catch (e) { /* ignore */ }
-}
-
-// The topic phone action buttons post commands to. Defaults to "<topic>-ctrl".
+// The topic the phone action button posts commands to. Defaults to
+// "<topic>-ctrl"; the phone does not need to subscribe to it.
 function controlTopic() {
   const c = cfg();
   const topic = String(c.get('topic', '') || '').trim();
@@ -320,24 +275,23 @@ function controlTopic() {
   return String(c.get('controlTopic', '') || '').trim() || topic + '-ctrl';
 }
 
-// Act on a command a phone button posted to the control topic.
+// Act on a command a phone button posted to the control topic. The button flips
+// the same "enabled" switch as the status bar item, so both stay in sync.
 function applyControlCommand(msg) {
   const m = String(msg || '').trim().toLowerCase();
-  if (m.indexOf('snooze') === 0) {
-    const n = parseInt((m.split(':')[1] || '').replace(/\D/g, ''), 10);
-    snoozeMinutes(n > 0 ? n : 30);
-  } else if (m === 'today') {
-    snoozeUntilEndOfDay();
-  } else if (m === 'on' || m === 'resume') {
-    clearSnooze();
-  } else if (m === 'off') {
-    snoozeMinutes(12 * 60);
+  const c = cfg();
+  if (m === 'toggle') {
+    c.update('enabled', !c.get('enabled', true), vscode.ConfigurationTarget.Global);
+  } else if (m === 'off' || m === 'disable') {
+    c.update('enabled', false, vscode.ConfigurationTarget.Global);
+  } else if (m === 'on' || m === 'enable') {
+    c.update('enabled', true, vscode.ConfigurationTarget.Global);
   }
 }
 
-// Listen to the control topic's JSON stream so phone buttons can snooze/resume
-// without touching the computer. Reconnects on drop; stays idle when buttons
-// are off or no topic is set.
+// Listen to the control topic's JSON stream so a phone button can turn
+// notifications on/off without touching the computer. Reconnects on drop; stays
+// idle when buttons are off or no topic is set.
 function createControlSubscription(onChange) {
   let req = null;
   let timer = null;
@@ -519,10 +473,7 @@ function sendNotification(kind, project, interrupted, overrideMessage) {
           }
           return a;
         };
-        data.actions = [
-          mkAction('Снуз 30 мин', 'snooze:30'),
-          mkAction('Не беспокоить сегодня', 'today'),
-        ];
+        data.actions = [mkAction('Выключить уведомления', 'toggle')];
       }
     }
 
@@ -626,9 +577,6 @@ function handleTrigger(kind) {
     return;
   }
   if (kind === WAITING && !cfg().get('notifyOnWaiting', true)) {
-    return;
-  }
-  if (isSnoozed()) {
     return;
   }
   const seen = {};
@@ -1009,18 +957,16 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('claudeNotify.snooze', function () {
-      snoozeMinutes(30);
-      render(item);
-      vscode.window.setStatusBarMessage('Claude Notify: приглушено на 30 минут', 4000);
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('claudeNotify.unsnooze', function () {
-      clearSnooze();
-      render(item);
-      vscode.window.setStatusBarMessage('Claude Notify: приглушение снято', 4000);
+    vscode.commands.registerCommand('claudeNotify.toggleIdle', async function () {
+      const c = cfg();
+      const on = Number(c.get('idleSeconds', 45)) > 0;
+      await c.update('idleSeconds', on ? 0 : 45, vscode.ConfigurationTarget.Global);
+      vscode.window.setStatusBarMessage(
+        on
+          ? 'Claude Notify: молчание по активности выключено'
+          : 'Claude Notify: молчание по активности включено (45 сек)',
+        4000
+      );
     })
   );
 
@@ -1033,7 +979,7 @@ function activate(context) {
     vscode.workspace.onDidChangeTextDocument(markActivity)
   );
 
-  // Listen for phone action-button commands and reflect snooze in the status bar.
+  // Listen for phone action-button commands and refresh the status bar toggle.
   const control = createControlSubscription(function () { render(item); });
   control.start();
   context.subscriptions.push({ dispose: function () { control.dispose(); } });

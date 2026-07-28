@@ -60,12 +60,8 @@
         "title": "Claude Notify: показать QR для подписки"
       },
       {
-        "command": "claudeNotify.snooze",
-        "title": "Claude Notify: приглушить на 30 минут"
-      },
-      {
-        "command": "claudeNotify.unsnooze",
-        "title": "Claude Notify: снять приглушение"
+        "command": "claudeNotify.toggleIdle",
+        "title": "Claude Notify: молчание по активности (вкл/выкл)"
       }
     ],
     "configuration": {
