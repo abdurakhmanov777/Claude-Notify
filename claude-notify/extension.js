@@ -131,6 +131,17 @@ function render(item) {
     item.color = new vscode.ThemeColor('statusBarItem.warningForeground');
     return;
   }
+  if (isSnoozed()) {
+    const d = new Date(snoozedUntil());
+    const hh = ('0' + d.getHours()).slice(-2);
+    const mm = ('0' + d.getMinutes()).slice(-2);
+    item.text = '$(bell-slash) Claude';
+    item.tooltip =
+      'Claude Notify: приглушено до ' + hh + ':' + mm +
+      '. Команда «Claude Notify: снять приглушение» вернёт уведомления.';
+    item.color = new vscode.ThemeColor('disabledForeground');
+    return;
+  }
   item.text = '$(bell) Claude';
   item.tooltip = 'Уведомления на телефон включены. Нажмите, чтобы выключить.';
   item.color = undefined;
@@ -247,6 +258,183 @@ function sweepMarkers() {
   });
 }
 
+// --- Activity, snooze & phone remote control --------------------------------
+
+const snoozePath = path.join(claudeDir, '.ntfy-snooze');
+
+// Most recent in-editor activity, used to skip completion pushes while you are
+// clearly still at the keyboard.
+let lastActivity = Date.now();
+
+function markActivity() {
+  lastActivity = Date.now();
+}
+
+// Completion pushes are skipped when VS Code saw activity within the last
+// idleSeconds (0 disables). Waiting/interrupted pushes ignore this.
+function activeRecently() {
+  const s = Number(cfg().get('idleSeconds', 45));
+  return isFinite(s) && s > 0 && Date.now() - lastActivity < s * 1000;
+}
+
+function snoozedUntil() {
+  try {
+    const v = Number(String(fs.readFileSync(snoozePath, 'utf8')).trim());
+    return isFinite(v) ? v : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function isSnoozed() {
+  return Date.now() < snoozedUntil();
+}
+
+function snoozeMinutes(minutes) {
+  try {
+    fs.writeFileSync(snoozePath, String(Date.now() + minutes * 60000), 'utf8');
+  } catch (e) { /* ignore */ }
+}
+
+function snoozeUntilEndOfDay() {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  try {
+    fs.writeFileSync(snoozePath, String(d.getTime()), 'utf8');
+  } catch (e) { /* ignore */ }
+}
+
+function clearSnooze() {
+  try {
+    fs.unlinkSync(snoozePath);
+  } catch (e) { /* ignore */ }
+}
+
+// The topic phone action buttons post commands to. Defaults to "<topic>-ctrl".
+function controlTopic() {
+  const c = cfg();
+  const topic = String(c.get('topic', '') || '').trim();
+  if (!topic) {
+    return '';
+  }
+  return String(c.get('controlTopic', '') || '').trim() || topic + '-ctrl';
+}
+
+// Act on a command a phone button posted to the control topic.
+function applyControlCommand(msg) {
+  const m = String(msg || '').trim().toLowerCase();
+  if (m.indexOf('snooze') === 0) {
+    const n = parseInt((m.split(':')[1] || '').replace(/\D/g, ''), 10);
+    snoozeMinutes(n > 0 ? n : 30);
+  } else if (m === 'today') {
+    snoozeUntilEndOfDay();
+  } else if (m === 'on' || m === 'resume') {
+    clearSnooze();
+  } else if (m === 'off') {
+    snoozeMinutes(12 * 60);
+  }
+}
+
+// Listen to the control topic's JSON stream so phone buttons can snooze/resume
+// without touching the computer. Reconnects on drop; stays idle when buttons
+// are off or no topic is set.
+function createControlSubscription(onChange) {
+  let req = null;
+  let timer = null;
+  let stopped = false;
+
+  function cleanup() {
+    if (req) { try { req.destroy(); } catch (e) { /* ignore */ } req = null; }
+    if (timer) { clearTimeout(timer); timer = null; }
+  }
+
+  function scheduleReconnect() {
+    if (stopped || timer) {
+      return;
+    }
+    timer = setTimeout(function () { timer = null; connect(); }, 8000);
+  }
+
+  function connect() {
+    if (stopped) {
+      return;
+    }
+    cleanup();
+    const c = cfg();
+    if (!c.get('actionButtons', true)) {
+      return; // idle until restart()
+    }
+    const topic = controlTopic();
+    if (!topic) {
+      return;
+    }
+    const server = String(c.get('server', 'https://ntfy.sh') || 'https://ntfy.sh')
+      .trim().replace(/\/+$/, '');
+    let url;
+    try {
+      url = new URL(
+        server + '/' + encodeURIComponent(topic) + '/json?since=' +
+          Math.floor(Date.now() / 1000)
+      );
+    } catch (e) {
+      return;
+    }
+    const mod = url.protocol === 'http:' ? http : https;
+    const headers = {};
+    const token = String(c.get('token', '') || '').trim();
+    if (token) {
+      headers['Authorization'] = 'Bearer ' + token;
+    }
+    try {
+      req = mod.get(
+        {
+          hostname: url.hostname,
+          port: url.port || (url.protocol === 'http:' ? 80 : 443),
+          path: url.pathname + url.search,
+          headers: headers,
+        },
+        function (res) {
+          let buf = '';
+          res.on('data', function (chunk) {
+            buf += chunk.toString('utf8');
+            let nl;
+            while ((nl = buf.indexOf('\n')) >= 0) {
+              const line = buf.slice(0, nl).trim();
+              buf = buf.slice(nl + 1);
+              if (!line) {
+                continue;
+              }
+              try {
+                const ev = JSON.parse(line);
+                if (ev && ev.event === 'message' && ev.message) {
+                  applyControlCommand(ev.message);
+                  if (onChange) { onChange(); }
+                }
+              } catch (e) { /* ignore malformed line */ }
+            }
+          });
+          res.on('end', scheduleReconnect);
+          res.on('error', scheduleReconnect);
+        }
+      );
+      req.on('error', scheduleReconnect);
+      // ntfy sends keepalives ~every 45s; reconnect if the stream goes quiet.
+      req.setTimeout(90000, function () {
+        cleanup();
+        scheduleReconnect();
+      });
+    } catch (e) {
+      scheduleReconnect();
+    }
+  }
+
+  return {
+    start: connect,
+    restart: connect,
+    dispose: function () { stopped = true; cleanup(); },
+  };
+}
+
 // Publish via ntfy's JSON endpoint (POST to the server root with a JSON body).
 // JSON body is UTF-8, so title and message keep Cyrillic intact - no
 // HTTP-header encoding issues, no curl.
@@ -312,6 +500,30 @@ function sendNotification(kind, project, interrupted, overrideMessage) {
     const click = String(c.get('click', '') || '').trim();
     if (click) {
       data.click = click;
+    }
+
+    // Phone action buttons: tapping one posts a command to the control topic,
+    // which the extension listens to (see createControlSubscription).
+    if (c.get('actionButtons', true)) {
+      const ctrl = controlTopic();
+      if (ctrl) {
+        const ctrlUrl = server + encodeURIComponent(ctrl);
+        const t = String(c.get('token', '') || '').trim();
+        const mkAction = function (label, cmd) {
+          const a = {
+            action: 'http', label: label, url: ctrlUrl,
+            method: 'POST', body: cmd, clear: true,
+          };
+          if (t) {
+            a.headers = { Authorization: 'Bearer ' + t };
+          }
+          return a;
+        };
+        data.actions = [
+          mkAction('Снуз 30 мин', 'snooze:30'),
+          mkAction('Не беспокоить сегодня', 'today'),
+        ];
+      }
     }
 
     const body = Buffer.from(JSON.stringify(data), 'utf8');
@@ -416,10 +628,16 @@ function handleTrigger(kind) {
   if (kind === WAITING && !cfg().get('notifyOnWaiting', true)) {
     return;
   }
+  if (isSnoozed()) {
+    return;
+  }
   const seen = {};
   parseTrigger(content).forEach(function (rec) {
     if (kind === WAITING && rec.ntype && SKIP_NTYPES[rec.ntype]) {
       return;
+    }
+    if (kind === DONE && activeRecently()) {
+      return; // still working in VS Code - no phone push needed for completion
     }
     const key = eventKey(kind, rec);
     if (seen[key]) {
@@ -791,9 +1009,40 @@ function activate(context) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('claudeNotify.snooze', function () {
+      snoozeMinutes(30);
+      render(item);
+      vscode.window.setStatusBarMessage('Claude Notify: приглушено на 30 минут', 4000);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('claudeNotify.unsnooze', function () {
+      clearSnooze();
+      render(item);
+      vscode.window.setStatusBarMessage('Claude Notify: приглушение снято', 4000);
+    })
+  );
+
+  // Track in-editor activity so completion pushes can be skipped while you work.
+  context.subscriptions.push(
+    vscode.window.onDidChangeTextEditorSelection(markActivity),
+    vscode.window.onDidChangeTextEditorVisibleRanges(markActivity),
+    vscode.window.onDidChangeActiveTextEditor(markActivity),
+    vscode.window.onDidChangeWindowState(markActivity),
+    vscode.workspace.onDidChangeTextDocument(markActivity)
+  );
+
+  // Listen for phone action-button commands and reflect snooze in the status bar.
+  const control = createControlSubscription(function () { render(item); });
+  control.start();
+  context.subscriptions.push({ dispose: function () { control.dispose(); } });
+
+  context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(function (e) {
       if (e.affectsConfiguration('claudeNotify')) {
         render(item);
+        control.restart();
       }
     })
   );

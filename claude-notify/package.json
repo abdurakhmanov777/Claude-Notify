@@ -58,6 +58,14 @@
       {
         "command": "claudeNotify.showQr",
         "title": "Claude Notify: показать QR для подписки"
+      },
+      {
+        "command": "claudeNotify.snooze",
+        "title": "Claude Notify: приглушить на 30 минут"
+      },
+      {
+        "command": "claudeNotify.unsnooze",
+        "title": "Claude Notify: снять приглушение"
       }
     ],
     "configuration": {
@@ -135,6 +143,22 @@
           "type": "string",
           "default": "",
           "description": "URL, который откроется при тапе по уведомлению на телефоне. Пусто - без действия."
+        },
+        "claudeNotify.idleSeconds": {
+          "type": "number",
+          "default": 45,
+          "minimum": 0,
+          "description": "Не слать пуш о завершении, если вы что-то делали в VS Code (печатали, кликали, скроллили) в последние столько секунд — вы и так за экраном. 0 - слать всегда. На «ожидание» и «обрыв» не влияет."
+        },
+        "claudeNotify.actionButtons": {
+          "type": "boolean",
+          "default": true,
+          "description": "Добавлять в пуш кнопки «Снуз 30 мин» / «Не беспокоить сегодня». Работают через управляющий топик: расширение слушает его и приглушает уведомления. В основном для Android-приложения ntfy."
+        },
+        "claudeNotify.controlTopic": {
+          "type": "string",
+          "default": "",
+          "description": "Топик для команд с телефона (кнопки в пуше). Пусто - используется «<ваш топик>-ctrl». Подписываться на него на телефоне не нужно."
         }
       }
     }

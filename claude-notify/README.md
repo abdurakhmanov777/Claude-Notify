@@ -184,6 +184,9 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
 | `claudeNotify.priority` | `default` | Приоритет пуша: `min`, `low`, `default`, `high`, `max`. |
 | `claudeNotify.tags` | *(пусто)* | Теги/эмодзи ntfy через запятую, напр. `white_check_mark,robot`. [Список эмодзи](https://docs.ntfy.sh/emojis/). |
 | `claudeNotify.click` | *(пусто)* | URL, открывающийся при тапе по уведомлению. |
+| `claudeNotify.idleSeconds` | `45` | Не слать пуш о завершении, если вы трогали VS Code (печатали/кликали/скроллили) последние N секунд — вы и так за экраном. `0` - слать всегда. На «ожидание»/«обрыв» не влияет. |
+| `claudeNotify.actionButtons` | `true` | Кнопки «Снуз 30 мин» / «Не беспокоить сегодня» в пуше (через управляющий топик). В основном Android. |
+| `claudeNotify.controlTopic` | *(пусто)* | Топик для команд с телефона. Пусто - `<ваш топик>-ctrl`. Подписываться на него на телефоне не нужно. |
 
 ### Подстановка `{project}`
 
@@ -196,6 +199,7 @@ node -e "console.log('claude-'+require('crypto').randomBytes(8).toString('hex'))
 - **Claude Notify: отправить тестовое уведомление**
 - **Claude Notify: настроить хуки Claude Code**
 - **Claude Notify: показать QR для подписки** — QR с вашим топиком, чтобы не вводить его на телефоне вручную
+- **Claude Notify: приглушить на 30 минут** / **снять приглушение** — временно заглушить пуши (то же делают кнопки в уведомлении на телефоне)
 
 ---
 
