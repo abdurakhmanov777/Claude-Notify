@@ -427,7 +427,7 @@ function sendNotification(kind, project, interrupted, overrideMessage) {
     } else if (interrupted) {
       rawMessage = c.get('interruptedMessage', 'Запрос прерван');
     } else {
-      rawMessage = c.get('message', 'Запрос завершён');
+      rawMessage = c.get('message', 'Запрос завершен');
     }
 
     const data = {
@@ -969,19 +969,20 @@ function activate(context) {
         );
         return;
       }
-      // Turning it on: ask how many seconds of inactivity to require each time.
+      // Turning it on: ask how many minutes of inactivity to require each time.
+      // Stored as seconds in idleSeconds; the prompt is in minutes for comfort.
       const answer = await vscode.window.showInputBox({
         title: 'Молчание при активности',
         prompt:
-          'Через сколько секунд бездействия в VS Code слать пуш о завершении? ' +
-          '(если вы что-то делали за экраном в последние N секунд — пуш не придёт)',
-        placeHolder: 'например, 45',
-        value: '45',
+          'Уведомления не приходят в течение определенного количества минут ' +
+          'с момента последнего вашего действия в VS Code. Задайте количество минут.',
+        placeHolder: 'например, 1',
+        value: '1',
         ignoreFocusOut: true,
         validateInput: function (s) {
-          const n = Number(String(s).trim());
+          const n = Number(String(s).trim().replace(',', '.'));
           if (!String(s).trim() || !isFinite(n) || n <= 0) {
-            return 'Введите число секунд больше 0';
+            return 'Введите число минут больше 0';
           }
           return null;
         },
@@ -989,10 +990,14 @@ function activate(context) {
       if (answer === undefined) {
         return; // cancelled - leave the feature off
       }
-      const seconds = Number(String(answer).trim());
-      await c.update('idleSeconds', seconds, vscode.ConfigurationTarget.Global);
+      const minutes = Number(String(answer).trim().replace(',', '.'));
+      await c.update(
+        'idleSeconds',
+        Math.round(minutes * 60),
+        vscode.ConfigurationTarget.Global
+      );
       vscode.window.setStatusBarMessage(
-        'Claude Notify: молчание при активности включено (' + seconds + ' сек)',
+        'Claude Notify: молчание при активности включено (' + minutes + ' мин)',
         4000
       );
     })
